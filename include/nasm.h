@@ -1,6 +1,6 @@
 /* ----------------------------------------------------------------------- *
  *
- *   Copyright 1996-2018 The NASM Authors - All Rights Reserved
+ *   Copyright 1996-2020 The NASM Authors - All Rights Reserved
  *   See the file AUTHORS included with the NASM distribution for
  *   the specific copyright holders.
  *
@@ -111,10 +111,11 @@ enum out_type {
     OUT_REL8ADR
 };
 
-enum out_sign {
-    OUT_WRAP,                   /* Undefined signedness (wraps) */
-    OUT_SIGNED,                 /* Value is signed */
-    OUT_UNSIGNED                /* Value is unsigned */
+enum out_flags {
+    OUT_WRAP     = 0,           /* Undefined signedness (wraps) */
+    OUT_SIGNED   = 1,           /* Value is signed */
+    OUT_UNSIGNED = 2,           /* Value is unsigned */
+    OUT_SIGNMASK = 3            /* Mask for signedness bits */
 };
 
 /*
@@ -126,7 +127,7 @@ struct out_data {
     int64_t offset;             /* Offset within segment */
     int32_t segment;            /* Segment written to */
     enum out_type type;         /* See above */
-    enum out_sign sign;         /* See above */
+    enum out_flags flags;       /* See above */
     int inslen;                 /* Length of instruction */
     int insoffs;                /* Offset inside instruction */
     int bits;                   /* Bits mode of compilation */
@@ -137,6 +138,7 @@ struct out_data {
     int32_t tsegment;           /* Target segment for relocation */
     int32_t twrt;               /* Relocation with respect to */
     int64_t relbase;            /* Relative base for OUT_RELADDR */
+    struct src_location where;  /* Source file and line */
 };
 
 /*
@@ -342,62 +344,63 @@ enum preproc_mode {
     PP_PREPROC                  /* Preprocessing only */
 };
 
-struct preproc_ops {
-    /*
-     * Called once at the very start of assembly.
-     */
-    void (*init)(void);
-
-    /*
-     * Called at the start of a pass; given a file name, the number
-     * of the pass, an error reporting function, an evaluator
-     * function, and a listing generator to talk to.
-     */
-    void (*reset)(const char *file, enum preproc_mode mode,
-                  struct strlist *deplist);
-
-    /*
-     * Called to fetch a line of preprocessed source. The line
-     * returned has been malloc'ed, and so should be freed after
-     * use.
-     */
-    char *(*getline)(void);
-
-    /* Called at the end of each pass. */
-    void (*cleanup_pass)(void);
-
-    /*
-     * Called at the end of the assembly session,
-     * after cleanup_pass() has been called for the
-     * last pass.
-     */
-    void (*cleanup_session)(void);
-
-    /* Additional macros specific to output format */
-    void (*extra_stdmac)(macros_t *macros);
-
-    /* Early definitions and undefinitions for macros */
-    void (*pre_define)(char *definition);
-    void (*pre_undefine)(char *definition);
-
-    /* Include file from command line */
-    void (*pre_include)(char *fname);
-
-    /* Add a command from the command line */
-    void (*pre_command)(const char *what, char *str);
-
-    /* Include path from command line */
-    void (*include_path)(struct strlist *ipath);
-
-    /* Unwind the macro stack when printing an error message */
-    void (*error_list_macros)(errflags severity);
-
-    /* Return true if an error message should be suppressed */
-    bool (*suppress_error)(errflags severity);
+enum preproc_opt {
+    PP_TRIVIAL  = 1,            /* Only %line or # directives */
+    PP_NOLINE   = 2,            /* Ignore %line and # directives */
+    PP_TASM     = 4             /* TASM compatibility hacks */
 };
 
-extern const struct preproc_ops nasmpp;
-extern const struct preproc_ops preproc_nop;
+/*
+ * Called once at the very start of assembly.
+ */
+void pp_init(enum preproc_opt opt);
+
+/*
+ * Called at the start of a pass; given a file name, the number
+ * of the pass, an error reporting function, an evaluator
+ * function, and a listing generator to talk to.
+ */
+void pp_reset(const char *file, enum preproc_mode mode,
+              struct strlist *deplist);
+
+/*
+ * Called to fetch a line of preprocessed source. The line
+ * returned has been malloc'ed, and so should be freed after
+ * use.
+ */
+char *pp_getline(void);
+
+/* Called at the end of each pass. */
+void pp_cleanup_pass(void);
+
+/*
+ * Called at the end of the assembly session,
+ * after cleanup_pass() has been called for the
+ * last pass.
+ */
+void pp_cleanup_session(void);
+
+/* Additional macros specific to output format */
+void pp_extra_stdmac(macros_t *macros);
+
+/* Early definitions and undefinitions for macros */
+void pp_pre_define(char *definition);
+void pp_pre_undefine(char *definition);
+
+/* Include file from command line */
+void pp_pre_include(char *fname);
+
+/* Add a command from the command line */
+void pp_pre_command(const char *what, char *str);
+
+/* Include path from command line */
+void pp_include_path(struct strlist *ipath);
+
+/* Unwind the macro stack when printing an error message */
+void pp_error_list_macros(errflags severity);
+
+/* Return true if an error message should be suppressed */
+bool pp_suppress_error(errflags severity);
 
 /* List of dependency files */
 extern struct strlist *depend_list;
@@ -908,7 +911,7 @@ struct ofmt {
      * It is allowed to modify the string it is given a pointer to.
      *
      * It is also allowed to specify a default instruction size for
-     * the segment, by setting `*bits' to 16 or 32. Or, if it
+     * the segment, by setting `*bits' to 16, 32 or 64. Or, if it
      * doesn't wish to define a default, it can leave `bits' alone.
      */
     int32_t (*section)(char *name, int *bits);
@@ -1004,6 +1007,7 @@ extern FILE *ofile;
  * interfaces to the functions therein.
  * ------------------------------------------------------------
  */
+struct debug_macro_info;
 
 struct dfmt {
     /*
@@ -1036,6 +1040,14 @@ struct dfmt {
 
     void (*debug_deflabel)(char *name, int32_t segment, int64_t offset,
                            int is_global, char *special);
+
+    /*
+     * debug_macros - called once at the end with a definition for each
+     * non-.nolist macro that has been invoked at least once in the program,
+     * and the corresponding address ranges. See dbginfo.h.
+     */
+    void (*debug_macros)(const struct debug_macro_info *);
+
     /*
      * debug_directive - called whenever a DEBUG directive other than 'LINE'
      * is encountered. 'directive' contains the first parameter to the
@@ -1280,6 +1292,8 @@ struct optimization {
 
 /*
  * Various types of compiler passes we may execute.
+ * If these are changed, you need to also change _pass_types[]
+ * in asm/nasm.c.
  */
 enum pass_type {
     PASS_INIT,            /* Initialization, not doing anything yet */

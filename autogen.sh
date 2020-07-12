@@ -20,11 +20,14 @@ if test ! x"$autolib" = x; then
     for prg in install-sh compile config.guess config.sub; do
 	# Update autoconf helpers if and only if newer ones are available
 	if test -f "$autolib"/"$prg" && \
-		( test -f "$autolib"/"$prg" && \
-		      sed -n -r -e \
-			  's/^(scriptver(|sion)|timestamp)=['\''"]?([^'\''"]+).*$/\3/p' \
+		( set -e ; \
+		  test -f autoconf/helpers/"$prg" && sed -n \
+		    -e 's/^scriptver=/scriptversion=/' \
+		    -e 's/^timestamp=/scriptversion=/' \
+		    -e 's/^scriptversion=['\''"]?\([^'\''"]*\).*$/\1/p' \
 			  "$autolib"/"$prg" autoconf/helpers/"$prg" | \
-			  sort --check=quiet; test $? -ne 0 )
+			  sort -c 2>/dev/null ; \
+		  test $? -ne 0 )
 	then
 	    cp -f "$autolib"/"$prg" autoconf/helpers
 	fi
@@ -43,15 +46,6 @@ if test ! -f autoconf/aclocal.m4; then
 fi
 rm -rf autoconf/*m4.old
 "$AUTOHEADER" -B autoconf
-if [ config/config.h.in -nt config/unconfig.h ]; then
-    # Create a file corresponding to a completely empty configure
-    # instance, commenting out the #undef directives from the template
-    # just like configure would do.
-    perl -np < config/config.h.in > config/unconfig.h \
-	 -e 's:^(\#\s*undef\s.*)$:/* $1 */:;' \
-	 -e 's:config/config.h.in:config/unconfig.h:;' \
-	 -e 's:autoheader:autogen.sh:;'
-fi
 "$AUTOCONF" -B autoconf
 rm -rf autom4te.cache config.log config.status config/config.h Makefile
 

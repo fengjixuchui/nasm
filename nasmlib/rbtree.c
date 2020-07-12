@@ -87,6 +87,14 @@ struct rbtree *rb_search(const struct rbtree *tree, uint64_t key)
     return (struct rbtree *)best;
 }
 
+struct rbtree *rb_search_exact(const struct rbtree *tree, uint64_t key)
+{
+    struct rbtree *rv;
+
+    rv = rb_search(tree, key);
+    return (rv && rv->key == key) ? rv : NULL;
+}
+
 /* Reds two left in a row? */
 static inline bool is_red_left_left(struct rbtree *h)
 {
@@ -208,17 +216,36 @@ _rb_insert(struct rbtree *tree, struct rbtree *node)
     return tree;
 }
 
+struct rbtree *rb_first(const struct rbtree *tree)
+{
+    if (unlikely(!tree))
+        return NULL;
+
+    while (!(tree->m.flags & RBTREE_NODE_PRED))
+        tree = tree->m.left;
+
+    return (struct rbtree *)tree;
+}
+
+struct rbtree *rb_last(const struct rbtree *tree)
+{
+    if (unlikely(!tree))
+        return NULL;
+
+    while (!(tree->m.flags & RBTREE_NODE_SUCC))
+        tree = tree->m.right;
+
+    return (struct rbtree *)tree;
+}
+
 struct rbtree *rb_prev(const struct rbtree *node)
 {
     struct rbtree *np = node->m.left;
 
     if (node->m.flags & RBTREE_NODE_PRED)
         return np;
-
-    while (!(np->m.flags & RBTREE_NODE_SUCC))
-        np = np->m.right;
-
-    return np;
+    else
+        return rb_last(np);
 }
 
 struct rbtree *rb_next(const struct rbtree *node)
@@ -227,9 +254,6 @@ struct rbtree *rb_next(const struct rbtree *node)
 
     if (node->m.flags & RBTREE_NODE_SUCC)
         return np;
-
-    while (!(np->m.flags & RBTREE_NODE_PRED))
-        np = np->m.left;
-
-    return np;
+    else
+        return rb_first(np);
 }

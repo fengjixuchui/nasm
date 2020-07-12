@@ -105,7 +105,7 @@ bool tasm_compatible_mode = false;
 enum pass_type _pass_type;
 const char * const _pass_types[] =
 {
-    "init", "first", "optimize", "stabilize", "final"
+    "init", "preproc-only", "first", "optimize", "stabilize", "final"
 };
 int64_t _passn;
 int globalrel = 0;
@@ -143,9 +143,8 @@ static struct RAA *offsets;
 static struct SAA *forwrefs;    /* keep track of forward references */
 static const struct forwrefinfo *forwref;
 
-static const struct preproc_ops *preproc;
 static struct strlist *include_path;
-bool pp_noline;                 /* Ignore %line directives */
+static enum preproc_opt ppopt;
 
 #define OP_NORMAL           (1U << 0)
 #define OP_PREPROCESS       (1U << 1)
@@ -304,29 +303,29 @@ static void define_macros(void)
 
     if (oct->have_local) {
         strftime(temp, sizeof temp, "__?DATE?__=\"%Y-%m-%d\"", &oct->local);
-        preproc->pre_define(temp);
+        pp_pre_define(temp);
         strftime(temp, sizeof temp, "__?DATE_NUM?__=%Y%m%d", &oct->local);
-        preproc->pre_define(temp);
+        pp_pre_define(temp);
         strftime(temp, sizeof temp, "__?TIME?__=\"%H:%M:%S\"", &oct->local);
-        preproc->pre_define(temp);
+        pp_pre_define(temp);
         strftime(temp, sizeof temp, "__?TIME_NUM?__=%H%M%S", &oct->local);
-        preproc->pre_define(temp);
+        pp_pre_define(temp);
     }
 
     if (oct->have_gm) {
         strftime(temp, sizeof temp, "__?UTC_DATE?__=\"%Y-%m-%d\"", &oct->gm);
-        preproc->pre_define(temp);
+        pp_pre_define(temp);
         strftime(temp, sizeof temp, "__?UTC_DATE_NUM?__=%Y%m%d", &oct->gm);
-        preproc->pre_define(temp);
+        pp_pre_define(temp);
         strftime(temp, sizeof temp, "__?UTC_TIME?__=\"%H:%M:%S\"", &oct->gm);
-        preproc->pre_define(temp);
+        pp_pre_define(temp);
         strftime(temp, sizeof temp, "__?UTC_TIME_NUM?__=%H%M%S", &oct->gm);
-        preproc->pre_define(temp);
+        pp_pre_define(temp);
     }
 
     if (oct->have_posix) {
         snprintf(temp, sizeof temp, "__?POSIX_TIME?__=%"PRId64, oct->posix);
-        preproc->pre_define(temp);
+        pp_pre_define(temp);
     }
 
     /*
@@ -336,20 +335,20 @@ static void define_macros(void)
      */
     snprintf(temp, sizeof(temp), "__?OUTPUT_FORMAT?__=%s",
              ofmt_alias ? ofmt_alias->shortname : ofmt->shortname);
-    preproc->pre_define(temp);
+    pp_pre_define(temp);
 
     /*
      * Output-format specific macros.
      */
     if (ofmt->stdmac)
-        preproc->extra_stdmac(ofmt->stdmac);
+        pp_extra_stdmac(ofmt->stdmac);
 
     /*
      * Debug format, if any
      */
     if (dfmt != &null_debug_form) {
         snprintf(temp, sizeof(temp), "__?DEBUG_FORMAT?__=%s", dfmt->shortname);
-        preproc->pre_define(temp);
+        pp_pre_define(temp);
     }
 }
 
@@ -364,9 +363,9 @@ static void define_macros(void)
  */
 static void preproc_init(struct strlist *ipath)
 {
-    preproc->init();
+    pp_init(ppopt);
     define_macros();
-    preproc->include_path(ipath);
+    pp_include_path(ipath);
 }
 
 static void emit_dependencies(struct strlist *list)
@@ -455,6 +454,7 @@ static char *nasm_quote_filename(const char *fn)
 {
     const unsigned char *p =
         (const unsigned char *)fn;
+    size_t len;
 
     if (!p || !*p)
         return nasm_strdup("\"\"");
@@ -478,7 +478,8 @@ static char *nasm_quote_filename(const char *fn)
     return nasm_strdup(fn);
 
 quote:
-    return nasm_quote(fn, NULL);
+    len = strlen(fn);
+    return nasm_quote(fn, &len);
 }
 
 static void timestamp(void)
@@ -549,7 +550,6 @@ int main(int argc, char **argv)
     offsets = raa_init();
     forwrefs = saa_init((int32_t)sizeof(struct forwrefinfo));
 
-    preproc = &nasmpp;
     operating_mode = OP_NORMAL;
 
     parse_cmdline(argc, argv, 1);
@@ -574,6 +574,11 @@ int main(int argc, char **argv)
         }
     }
 
+    /* Have we enabled TASM mode? */
+    if (tasm_compatible_mode) {
+        ppopt |= PP_TASM;
+        nasm_ctype_tasm_mode();
+    }
     preproc_init(include_path);
 
     parse_cmdline(argc, argv, 2);
@@ -616,13 +621,13 @@ int main(int argc, char **argv)
             char *line;
 
             if (depend_missing_ok)
-                preproc->include_path(NULL);    /* "assume generated" */
+                pp_include_path(NULL);    /* "assume generated" */
 
-            preproc->reset(inname, PP_DEPS, depend_list);
+            pp_reset(inname, PP_DEPS, depend_list);
             ofile = NULL;
-            while ((line = preproc->getline()))
+            while ((line = pp_getline()))
                 nasm_free(line);
-            preproc->cleanup_pass();
+            pp_cleanup_pass();
             reset_warnings();
     } else if (operating_mode & OP_PREPROCESS) {
             char *line;
@@ -645,9 +650,9 @@ int main(int argc, char **argv)
             location.known = false;
 
             _pass_type = PASS_PREPROC;
-            preproc->reset(inname, PP_PREPROC, depend_list);
+            pp_reset(inname, PP_PREPROC, depend_list);
 
-            while ((line = preproc->getline())) {
+            while ((line = pp_getline())) {
                 /*
                  * We generate %line directives if needed for later programs
                  */
@@ -692,7 +697,7 @@ int main(int argc, char **argv)
 
             nasm_free(quoted_file_name);
 
-            preproc->cleanup_pass();
+            pp_cleanup_pass();
             reset_warnings();
             if (ofile)
                 fclose(ofile);
@@ -727,7 +732,7 @@ int main(int argc, char **argv)
         }
     }
 
-    preproc->cleanup_session();
+    pp_cleanup_session();
 
     if (depend_list && !terminate_after_phase)
         emit_dependencies(depend_list);
@@ -1062,19 +1067,19 @@ static bool process_arg(char *p, char *q, int pass)
         case 'p':       /* pre-include */
         case 'P':
             if (pass == 2)
-                preproc->pre_include(param);
+                pp_pre_include(param);
             break;
 
         case 'd':       /* pre-define */
         case 'D':
             if (pass == 2)
-                preproc->pre_define(param);
+                pp_pre_define(param);
             break;
 
         case 'u':       /* un-define */
         case 'U':
             if (pass == 2)
-                preproc->pre_undefine(param);
+                pp_pre_undefine(param);
             break;
 
         case 'i':       /* include search path */
@@ -1138,10 +1143,8 @@ static bool process_arg(char *p, char *q, int pass)
             break;
 
         case 't':
-            if (pass == 2) {
+            if (pass == 1)
                 tasm_compatible_mode = true;
-                nasm_ctype_tasm_mode();
-            }
             break;
 
         case 'v':
@@ -1156,7 +1159,7 @@ static bool process_arg(char *p, char *q, int pass)
 
         case 'a':       /* assemble only - don't preprocess */
             if (pass == 1)
-                preproc = &preproc_nop;
+                ppopt |= PP_TRIVIAL;
             break;
 
         case 'w':
@@ -1307,15 +1310,15 @@ static bool process_arg(char *p, char *q, int pass)
                     break;
                 case OPT_INCLUDE:
                     if (pass == 2)
-                        preproc->pre_include(q);
+                        pp_pre_include(q);
                     break;
                 case OPT_PRAGMA:
                     if (pass == 2)
-                        preproc->pre_command("pragma", param);
+                        pp_pre_command("pragma", param);
                     break;
                 case OPT_BEFORE:
                     if (pass == 2)
-                        preproc->pre_command(NULL, param);
+                        pp_pre_command(NULL, param);
                     break;
                 case OPT_LIMIT:
                     if (pass == 1)
@@ -1325,7 +1328,7 @@ static bool process_arg(char *p, char *q, int pass)
                     keep_all = true;
                     break;
                 case OPT_NO_LINE:
-                    pp_noline = true;
+                    ppopt |= PP_NOLINE;
                     break;
                 case OPT_DEBUG:
                     debug_nasm = param ? strtoul(param, NULL, 10) : debug_nasm+1;
@@ -1709,11 +1712,11 @@ static void assemble_file(const char *fname, struct strlist *depend_list)
             location.known = true;
         ofmt->reset();
         switch_segment(ofmt->section(NULL, &globalbits));
-        preproc->reset(fname, PP_NORMAL, pass_final() ? depend_list : NULL);
+        pp_reset(fname, PP_NORMAL, pass_final() ? depend_list : NULL);
 
         globallineno = 0;
 
-        while ((line = preproc->getline())) {
+        while ((line = pp_getline())) {
             if (++globallineno > nasm_limit[LIMIT_LINES])
                 nasm_fatal("overall line count exceeds the maximum %"PRId64"\n",
                            nasm_limit[LIMIT_LINES]);
@@ -1733,9 +1736,9 @@ static void assemble_file(const char *fname, struct strlist *depend_list)
 
         end_of_line:
             nasm_free(line);
-        }                       /* end while (line = preproc->getline... */
+        }                       /* end while (line = pp_getline... */
 
-        preproc->cleanup_pass();
+        pp_cleanup_pass();
 
         /* We better not be having an error hold still... */
         nasm_assert(!errhold_stack);
@@ -1868,8 +1871,8 @@ static bool is_suppressed(errflags severity)
     if (!(warning_state[warn_index(severity)] & WARN_ST_ENABLED))
         return true;
 
-    if (preproc && !(severity & ERR_PP_LISTMACRO))
-        return preproc->suppress_error(severity);
+    if (!(severity & ERR_PP_LISTMACRO))
+        return pp_suppress_error(severity);
 
     return false;
 }
@@ -2102,8 +2105,7 @@ void nasm_verror(errflags severity, const char *fmt, va_list args)
         return;
 
     if (!(severity & (ERR_HERE|ERR_PP_LISTMACRO)))
-        if (preproc)
-            preproc->error_list_macros(severity);
+        pp_error_list_macros(severity);
 }
 
 /*
@@ -2148,8 +2150,7 @@ static void nasm_issue_error(struct nasm_errtext *et)
             here = where.filename ? " here" : " in an unknown location";
         }
 
-        if (warn_list && true_type < ERR_NONFATAL &&
-            !(pass_first() && (severity & ERR_PASS1))) {
+        if (warn_list && true_type < ERR_NONFATAL) {
             /*
              * Buffer up warnings until we either get an error
              * or we are on the code-generation pass.
