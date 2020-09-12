@@ -1,6 +1,7 @@
 \# --------------------------------------------------------------------------
 \#
 \#   Copyright 1996-2020 The NASM Authors - All Rights Reserved
+\M{year}{1996-2020}
 \#   See the file AUTHORS included with the NASM distribution for
 \#   the specific copyright holders.
 \#
@@ -36,10 +37,9 @@
 
 \M{category}{Programming}
 \M{title}{NASM - The Netwide Assembler}
-\M{year}{1996-2017}
 \M{author}{The NASM Development Team}
 \M{copyright_tail}{-- All Rights Reserved}
-\M{license}{This document is redistributable under the license given in the file "LICENSE" distributed in the NASM archive.}
+\M{license}{This document is redistributable under the license given in the section "License".}
 \M{summary}{This file documents NASM, the Netwide Assembler: an assembler targetting the Intel x86 series of processors, with portable source.}
 \M{infoname}{NASM}
 \M{infofile}{nasm}
@@ -318,17 +318,12 @@ easy to understand, similar to the syntax in the Intel Software
 Developer Manual with minimal complexity. It supports all currently
 known x86 architectural extensions, and has strong support for macros.
 
-NASM also comes with a set of utilities for handling its own RDOFF2
-object-file format.
+\S{legal} \i{License}
 
-\S{legal} \i{License} Conditions
+NASM is under the so-called 2-clause BSD license, also
+known as the simplified BSD license:
 
-Please see the file \c{LICENSE}, supplied as part of any NASM
-distribution archive, for the license conditions under which you may
-use NASM.  NASM is now under the so-called 2-clause BSD license, also
-known as the simplified BSD license.
-
-Copyright 1996-2017 the NASM Authors - All rights reserved.
+Copyright \m{year} the NASM Authors - All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are
@@ -493,9 +488,10 @@ Supported options are:
 
 \b \c{-Ls} show all single-line macro definitions
 
-\b \c{-Lw} flush the output after every line (very slow!)
+\b \c{-Lw} flush the output after every line (very slow, mainly useful
+to debug NASM crashes)
 
-\b \c{-L+} enable \e{all} listing options
+\b \c{-L+} enable \e{all} listing options except \c{-Lw} (very verbose)
 
 These options can be enabled or disabled at runtime using the
 \c{%pragma list options} directive:
@@ -986,6 +982,12 @@ If this option is given, all \i\c{%line} directives in the source code
 are ignored. This can be useful for debugging already preprocessed
 code. See \k{line}.
 
+\S{opt-reproducible} The \i\c{--reproducible} Option
+
+If this option is given, NASM will not emit information that is
+inherently dependent on the NASM version or different from run to run
+(such as timestamps) into the output file.
+
 
 \S{nasmenv} The \i\c{NASMENV} \i{Environment} Variable
 
@@ -1260,12 +1262,16 @@ uninitialized}\i{uninitialized} counterparts \i\c{RESB}, \i\c{RESW},
 \i\c\{RESZ}; the \i\c{INCBIN} command, the \i\c{EQU} command, and the
 \i\c{TIMES} prefix.
 
+In this documentation, the notation "\c{Dx}" and "\c{RESx}" is used to
+indicate all the \c{DB} and \c{RESB} type directives, respectively.
 
-\S{db} \c{DB} and Friends: Declaring Initialized Data
+
+\S{db} \c{Dx}: Declaring Initialized Data
 
 \i\c{DB}, \i\c{DW}, \i\c{DD}, \i\c{DQ}, \i\c{DT}, \i\c{DO}, \i\c{DY}
-and \i\c{DZ} are used, much as in MASM, to declare initialized data in
-the output file. They can be invoked in a wide range of ways:
+and \i\c{DZ} (collectively "\c{Dx}" in this documentation) are used,
+much as in MASM, to declare initialized data in the output file. They
+can be invoked in a wide range of ways:
 \I{floating-point}\I{character constant}\I{string constant}
 
 \c       db    0x55                ; just the byte 0x55
@@ -1282,8 +1288,8 @@ the output file. They can be invoked in a wide range of ways:
 \c       dq    1.234567e20         ; double-precision float
 \c       dt    1.234567e20         ; extended-precision float
 
-\c{DT}, \c{DO}, \c{DY} and \c{DZ} do not accept \i{numeric constants}
-as operands.
+\c{DT}, \c{DO}, \c{DY} and \c{DZ} do not accept integer
+\i{numeric constants} as operands.
 
 \I{masmdb} Starting in NASM 2.15, a the following \i{MASM}-like features
 have been implemented:
@@ -1328,6 +1334,22 @@ valid:
 \c        dw 3 dup (0xcc, 4 dup byte ('PQR'), ?), 0xabcd
 \c        dd 16 dup (0xaaaa, ?, 0xbbbbbb)
 \c        dd 64 dup (?)
+
+\I{baddb} The use of \c{$} (current address) in a \c{Dx} statement is
+undefined in the current version of NASM, \e{except in the following
+cases}:
+
+\b For the first expression in the statement, either a \c{DUP} or a data
+item.
+
+\b An expression of the form "\e{value}\c{ - $}", which is converted
+to a self-relative relocation.
+
+Future versions of NASM is likely to produce a different result or
+issue an error this case.
+
+There is no such restriction on using \c{$$} or section-relative
+symbols.
 
 \S{resb} \c{RESB} and Friends: Declaring \i{Uninitialized} Data
 
@@ -1692,9 +1714,9 @@ context.
 \i{Floating-point} constants are acceptable only as arguments to
 \i\c{DB}, \i\c{DW}, \i\c{DD}, \i\c{DQ}, \i\c{DT}, and \i\c{DO}, or as
 arguments to the special operators \i\c{__?float8?__},
-\i\c{__?float16?__}, \i\c{__?float32?__}, \i\c{__?float64?__},
-\i\c{__?float80m?__}, \i\c{__?float80e?__}, \i\c{__?float128l?__}, and
-\i\c{__?float128h?__}.
+\i\c{__?float16?__}, \i\c{__?bfloat16?__}, \i\c{__?float32?__},
+\i\c{__?float64?__}, \i\c{__?float80m?__}, \i\c{__?float80e?__},
+\i\c{__?float128l?__}, and \i\c{__?float128h?__}. See also \k{pkg_fp}.
 
 Floating-point constants are expressed in the traditional form:
 digits, then a period, then optionally more digits, then optionally an
@@ -1732,6 +1754,13 @@ sign:exponent:mantissa = 1:4:3 with an exponent bias of 7.  This
 appears to be the most frequently used 8-bit floating-point format,
 although it is not covered by any formal standard.  This is sometimes
 called a "\i{minifloat}."
+
+The \i\c{bfloat16} format is effectively a compressed version of the
+32-bit single precision format, with a reduced mantissa. It is
+effectively the same as truncating the 32-bit format to the upper 16
+bits, except for rounding. There is no \c{D}\e{x} directive that
+corresponds to \c{bfloat16} as it obviously has the same size as the
+IEEE standard 16-bit half precision format, see however \k{pkg_fp}.
 
 The special operators are used to produce floating-point numbers in
 other contexts.  They produce the binary representation of a specific
@@ -2398,7 +2427,9 @@ macros, but for case-insensitive macros, they can differ.
 
 For example:
 
-\c %idefine Foo mov %?,%??
+\c %imacro Foo 0
+\c         mov %?,%??
+\c %endmacro
 \c
 \c         foo
 \c         FOO
@@ -2408,15 +2439,51 @@ will expand to:
 \c         mov foo,Foo
 \c         mov FOO,Foo
 
-The sequence:
+These tokens can be used for single-line macros \e{if defined outside
+any multi-line macros.} See below.
 
-\c %idefine keyword $%?
+\S{selfref%*?} The Single-Line Macro Name: \i\c{%*?} and \i\c{%*??}
 
-can be used to make a keyword "disappear", for example in case a new
-instruction has been used as a label in older code.  For example:
+If the tokens \c{%?} and \c{%??} are used inside a multi-line macro,
+they are expanded before any directives are processed. As a result,
 
-\c %idefine pause $%?                  ; Hide the PAUSE instruction
+\c %imacro Foo 0
+\c       %idefine Bar _%?
+\c       mov BAR,bAr
+\c %endmacro
+\c
+\c       foo
+\c       mov eax,bar
 
+will expand to:
+
+\c       mov _foo,_foo
+\c       mov eax,_foo
+
+which may or may not be what you expected. The tokens \c{%*?} and
+\c{%*??} behave like \c{%?} and \c{%??} but are only expanded inside
+single-line macros. Thus:
+
+\c %imacro Foo 0
+\c       %idefine Bar _%*?
+\c       mov BAR,bAr
+\c %endmacro
+\c
+\c       foo
+\c       mov eax,bar
+
+will expand to:
+
+\c       mov _BAR,_bAr
+\c       mov eax,_bar
+
+The \c{%*?} can be used to make a keyword "disappear", for example in
+case a new instruction has been used as a label in older code.  For
+example:
+
+\c %idefine pause $%*?                 ; Hide the PAUSE instruction
+
+\c{%*?} and \c{%*??} were introduced in NASM 2.15.04.
 
 \S{undef} Undefining Single-Line Macros: \i\c{%undef}
 
@@ -2753,6 +2820,11 @@ interfering with the local label mechanism, as described in
 (the \c{..@} prefix, then a number, then another period) in case
 they interfere with macro-local labels.
 
+These labels are really macro-local \e{tokens}, and can be used for
+other purposes where a token unique to each macro invocation is
+desired, e.g. to name single-line macros without using the context
+feature (\k{ctxlocal}).
+
 
 \S{mlmacgre} \i{Greedy Macro Parameters}
 
@@ -2934,6 +3006,10 @@ Examples are given in \k{rotate}.
 \c{%00} will return the label preceeding the macro invocation, if any. The
 label must be on the same line as the macro invocation, may be a local label
 (see \k{locallab}), and need not end in a colon.
+
+If \c{%00} is present anywhere in the macro body, the label itself
+will not be emitted by NASM. You can, of course, put \c{%00:}
+explicitly at the beginning of your macro.
 
 
 \S{rotate} \i\c{%rotate}: \i{Rotating Macro Parameters}
@@ -3300,9 +3376,13 @@ string.
 
 The conditional assembly construct \c{%ifid}, taking one parameter
 (which may be blank), assembles the subsequent code if and only if
-the first token in the parameter exists and is an identifier.
-\c{%ifnum} works similarly, but tests for the token being a numeric
-constant; \c{%ifstr} tests for it being a string.
+\e{the first token} in the parameter exists and is an
+identifier. \c{$} and \c{$$} are \e{not} considered identifiers by
+\c{%ifid}.
+
+\c{%ifnum} works similarly, but tests for the token being an integer
+numeric constant (not an expression!) possibly preceeded by \c{+} or
+\c{-}; \c{%ifstr} tests for it being a quoted string.
 
 For example, the \c{writefile} macro defined in \k{mlmacgre} can be
 extended to take advantage of \c{%ifstr} in the following fashion:
@@ -4043,7 +4123,8 @@ which specifies a line increment value; each line of the input file
 read in is considered to correspond to \c{mmm} lines of the original
 source file.  Finally, \c{filename} is an optional parameter which
 specifies the file name of the original source file. It may be a
-quoted string.
+quoted string, in which case any additional argument after the quoted
+string will be ignored.
 
 After reading a \c{%line} preprocessor directive, NASM will report
 all file name and line numbers relative to the values specified
@@ -4055,6 +4136,13 @@ code. See \k{opt-no-line}.
 
 Starting in NASM 2.15, \c{%line} directives are processed before any
 other processing takes place.
+
+For compatibility with the output from some other preprocessors,
+including many C preprocessors, a \c{#} character followed by
+whitespace \e{at the very beginning of a line} is also treated as a
+\c{%line} directive, except that double quotes surrounding the
+filename are treated like NASM backquotes, with \c{\\}-escaped
+sequences decoded.
 
 \# This isn't a directive, it should be moved elsewhere...
 \S{getenv} \i\c{%!}\e{variable}: Read an Environment Variable.
@@ -4616,12 +4704,19 @@ This packages contains the following floating-point convenience macros:
 \c
 \c %define float8(x)       __?float8?__(x)
 \c %define float16(x)      __?float16?__(x)
+\c %define bfloat16(x)     __?bfloat16?__(x)
 \c %define float32(x)      __?float32?__(x)
 \c %define float64(x)      __?float64?__(x)
 \c %define float80m(x)     __?float80m?__(x)
 \c %define float80e(x)     __?float80e?__(x)
 \c %define float128l(x)    __?float128l?__(x)
 \c %define float128h(x)    __?float128h?__(x)
+
+It also defines the a multi-line macro \i\c{bf16} that can be used
+in a similar way to the \c{D}\e{x} directives for the other
+floating-point numbers:
+
+\c      bf16 -3.1415, NaN, 2000.0, +Inf
 
 
 \H{pkg_ifunc} \i\c{ifunc}: \i{Integer functions}
@@ -4660,17 +4755,61 @@ functionality, as intended to be used primarily with machine-generated code.
 It does not include any "programmer-friendly" shortcuts, nor does it in any way
 support ASSUME, symbol typing, or MASM-style structures.
 
-Currently, the MASM compatibility package emulates only the PTR
-keyword and recognize syntax displacement[index] for memory
-operations.
 To enable the package, use the directive:
 
 \c{%use masm}
 
-In addition, NASM now natively supports the MASM \c{?} and
-\c{DUP} syntax for the \c{DB} etc data declaration directives,
-regardless of if this package is included or not. See \k{db}.
+Currently, the MASM compatibility package emulates:
 
+\b The \c{FLAT} and \c{OFFSET} keywords are recognized and ignored.
+
+\b The \c{PTR} keyword signifies a memory reference, as if the
+argument had been put in square brackets:
+
+\c      mov eax,[foo]               ; memory reference
+\c      mov eax,dword ptr foo       ; memory reference
+\c      mov eax,dowrd ptr flat:foo  ; memory reference
+\c      mov eax,offset foo          ; address
+\c      mov eax,foo                 ; address (ambiguous syntax in MASM)
+
+\b The \c{SEGMENT} ... \c{ENDS} syntax:
+
+\c    segname SEGMENT
+\c        ...
+\c    segname ENDS
+
+\b The \c{PROC} ... \c{ENDP} syntax:
+
+\c    procname PROC [FAR]
+\c         ...
+\c    procname ENDP
+
+\> \c{PROC} will also define \c{RET} as a macro expanding to either
+\c{RETF} if \c{FAR} is specified and \c{RETN} otherwise. Any keyword
+after \c{PROC} other than \c{FAR} is ignored.
+
+\b The \c{TBYTE} keyword as an alias for \c{TWORD} (see \k{qsother}).
+
+\b The \c{END} directive is ignored.
+
+\b In 64-bit mode relative addressing is the default (\c{DEFAULT REL},
+see \k{REL & ABS}).
+
+In addition, NASM now natively supports, regardless of whether this
+package is used or not:
+
+\b \c{?} and \c{DUP} syntax for the \c{DB} etc data declaration
+directives (see \k{db}).
+
+\b \c{displacement[base+index]} syntax for memory operations, instead
+of \c{[base+index+displacement]}.
+
+\b \c{seg:[addr]} instead of \c{[seg:addr]} syntax.
+
+\b A pure offset can be given to \c{LEA} without square brackets:
+
+\c      lea rax,[foo]               ; standard syntax
+\c      lea rax,foo                 ; also accepted
 
 \C{directive} \i{Assembler Directives}
 
@@ -6587,7 +6726,14 @@ only special symbol supported is \c{..start}.
 
 
 \H{rdffmt} \I{RDOFF}\i\c{rdf}: \i{Relocatable Dynamic Object File
-Format}
+Format} (deprecated)
+
+\e{The RDOFF format is strongly deprecated and has been disabled
+starting in NASM 2.15.04. The RDOFF backend has been broken since at
+least NASM 2.14. The RDOFF utilities are scheduled to be removed from
+the NASM distribution in NASM 2.16.} If you have a strong use case for
+the RDOFF format, file a bug report at
+\W{https://bugs.nasm.us/}\c{https://bugs.nasm.us/} as soon as possible.
 
 The \c{rdf} output format produces \c{RDOFF} object files. \c{RDOFF}
 (Relocatable Dynamic Object File Format) is a home-grown object-file
@@ -6604,9 +6750,6 @@ both contain an \I{rdoff subdirectory}\c{rdoff} subdirectory holding
 a set of RDOFF utilities: an RDF linker, an \c{RDF} static-library
 manager, an RDF file dump utility, and a program which will load and
 execute an RDF executable under Linux.
-
-\c{rdf} supports only the \i{standard section names} \i\c{.text},
-\i\c{.data} and \i\c{.bss}.
 
 
 \S{rdflib} Requiring a Library: The \i\c{LIBRARY} Directive

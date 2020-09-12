@@ -36,7 +36,8 @@ if_("LOCK",              "Lockable if operand 0 is memory");
 if_("NOLONG",            "Not available in long mode");
 if_("LONG",              "Long mode");
 if_("NOHLE",             "HLE prefixes forbidden");
-if_("MIB",               "disassemble with split EA");
+if_("MIB",               "split base/index EA");
+if_("SIB",               "SIB encoding required");
 if_("BND",               "BND (0xF2) prefix available");
 if_("UNDOC",             "Undocumented");
 if_("HLE",               "HLE prefixed");
@@ -84,6 +85,16 @@ if_("AVX5124FMAPS",      "AVX-512 4-iteration multiply-add");
 if_("AVX5124VNNIW",      "AVX-512 4-iteration dot product");
 if_("SGX",               "Intel Software Guard Extensions (SGX)");
 if_("CET",               "Intel Control-Flow Enforcement Technology (CET)");
+if_("ENQCMD",            "Enqueue command instructions");
+if_("PCONFIG",           "Platform configuration instruction");
+if_("WBNOINVD",          "Writeback and do not invalidate instruction");
+if_("TSXLDTRK",          "TSX suspend load address tracking");
+if_("SERIALIZE",         "SERIALIZE instruction");
+if_("AVX512BF16",        "AVX-512 bfloat16");
+if_("AVX512VP2INTERSECT", "AVX-512 VP2INTERSECT instructions");
+if_("AMXTILE",           "AMX tile configuration instructions");
+if_("AMXBF16",           "AMX bfloat16 multiplication");
+if_("AMXINT8",           "AMX 8-bit integer multiplication");
 
 # Put these last [hpa: why?]
 if_("OBSOLETE",          "Instruction removed from architecture");

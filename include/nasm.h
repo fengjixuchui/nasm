@@ -67,6 +67,13 @@ struct compile_time {
 };
 extern struct compile_time official_compile_time;
 
+/* POSIX timestamp if and only if we are not a reproducible build */
+extern bool reproducible;
+static inline int64_t posix_timestamp(void)
+{
+    return reproducible ? 0 : official_compile_time.posix;
+}
+
 #define NO_SEG  INT32_C(-1)     /* null segment value */
 #define SEG_ABS 0x40000000L     /* mask for far-absolute segments */
 
@@ -155,26 +162,44 @@ typedef void (*ldfunc)(char *label, int32_t segment, int64_t offset,
  * ASCII character values, and zero for end-of-string.
  */
 enum token_type { /* token types, other than chars */
+
+    /* Token values shared between assembler and preprocessor */
+
+    /* Special codes */
     TOKEN_INVALID = -1, /* a placeholder value */
-    TOKEN_EOS = 0,      /* end of string */
-    TOKEN_QMARK = '?',
-    TOKEN_EQ = '=',
-    TOKEN_GT = '>',
-    TOKEN_LT = '<',     /* aliases */
-    TOKEN_ID = 256,     /* identifier */
-    TOKEN_NUM,          /* numeric constant */
-    TOKEN_ERRNUM,       /* malformed numeric constant */
-    TOKEN_STR,          /* string constant */
-    TOKEN_ERRSTR,       /* unterminated string constant */
-    TOKEN_FLOAT,        /* floating-point constant */
-    TOKEN_REG,          /* register name */
-    TOKEN_INSN,         /* instruction name */
-    TOKEN_HERE,         /* $ */
-    TOKEN_BASE,         /* $$ */
-    TOKEN_SIZE,		/* BYTE, WORD, DWORD, QWORD, etc */
-    TOKEN_SPECIAL,      /* REL, FAR, NEAR, STRICT, NOSPLIT, etc */
-    TOKEN_PREFIX,       /* A32, O16, LOCK, REPNZ, TIMES, etc */
-    TOKEN_SHL,          /* << or <<< */
+    TOKEN_BLOCK   = -2, /* used for storage management */
+    TOKEN_FREE    = -3, /* free token marker, use to catch leaks */
+    TOKEN_EOS     = 0,  /* end of string */
+
+    /*
+     * Single-character operators. Enumerated here to keep strict
+     * compilers happy, and for documentation.
+     */
+    TOKEN_WHITESPACE = ' ',     /* Preprocessor use */
+    TOKEN_BOOL_NOT   = '!',
+    TOKEN_AND        = '&',
+    TOKEN_OR         = '|',
+    TOKEN_XOR        = '^',
+    TOKEN_NOT        = '~',
+    TOKEN_MULT       = '*',
+    TOKEN_DIV        = '/',
+    TOKEN_MOD        = '%',
+    TOKEN_LPAR       = '(',
+    TOKEN_RPAR       = ')',
+    TOKEN_PLUS       = '+',
+    TOKEN_MINUS      = '-',
+    TOKEN_COMMA      = ',',
+    TOKEN_LBRACE     = '{',
+    TOKEN_RBRACE     = '}',
+    TOKEN_LBRACKET   = '[',
+    TOKEN_RBRACKET   = ']',
+    TOKEN_QMARK      = '?',
+    TOKEN_EQ         = '=',     /* = or == */
+    TOKEN_GT         = '>',
+    TOKEN_LT         = '<',
+
+    /* Multi-character operators */
+    TOKEN_SHL = 256,    /* << or <<< */
     TOKEN_SHR,          /* >> */
     TOKEN_SAR,          /* >>> */
     TOKEN_SDIV,         /* // */
@@ -186,6 +211,21 @@ enum token_type { /* token types, other than chars */
     TOKEN_DBL_AND,      /* && */
     TOKEN_DBL_OR,       /* || */
     TOKEN_DBL_XOR,      /* ^^ */
+
+    TOKEN_MAX_OPERATOR,
+
+    TOKEN_NUM,          /* numeric constant */
+    TOKEN_ERRNUM,       /* malformed numeric constant */
+    TOKEN_STR,          /* string constant */
+    TOKEN_ERRSTR,       /* unterminated string constant */
+    TOKEN_ID,           /* identifier */
+    TOKEN_FLOAT,        /* floating-point constant */
+    TOKEN_HERE,         /* $, not '$' because it is not an operator */
+    TOKEN_BASE,         /* $$ */
+
+    /* Token values only used by the assembler */
+    TOKEN_START_ASM,
+
     TOKEN_SEG,          /* SEG */
     TOKEN_WRT,          /* WRT */
     TOKEN_FLOATIZE,     /* __?floatX?__ */
@@ -194,18 +234,52 @@ enum token_type { /* token types, other than chars */
     TOKEN_DECORATOR,    /* decorators such as {...} */
     TOKEN_MASM_PTR,     /* __?masm_ptr?__ for the masm package */
     TOKEN_MASM_FLAT,    /* __?masm_flat?__ for the masm package */
-    TOKEN_OPMASK        /* translated token for opmask registers */
+    TOKEN_OPMASK,       /* translated token for opmask registers */
+    TOKEN_SIZE,		/* BYTE, WORD, DWORD, QWORD, etc */
+    TOKEN_SPECIAL,      /* REL, FAR, NEAR, STRICT, NOSPLIT, etc */
+    TOKEN_PREFIX,       /* A32, O16, LOCK, REPNZ, TIMES, etc */
+    TOKEN_REG,          /* register name */
+    TOKEN_INSN,         /* instruction name */
+
+    TOKEN_END_ASM,
+
+    /* Token values only used by the preprocessor */
+
+    TOKEN_START_PP = TOKEN_END_ASM,
+
+    TOKEN_OTHER,           /* % sequence without (current) meaning */
+    TOKEN_PREPROC_ID,      /* Preprocessor ID, e.g. %symbol */
+    TOKEN_MMACRO_PARAM,    /* MMacro parameter, e.g. %1 */
+    TOKEN_LOCAL_SYMBOL,    /* Local symbol, e.g. %%symbol */
+    TOKEN_LOCAL_MACRO,     /* Context-local macro, e.g. %$symbol */
+    TOKEN_ENVIRON,         /* %! */
+    TOKEN_INTERNAL_STR,    /* Unquoted string that should remain so */
+    TOKEN_NAKED_STR,       /* Unquoted string that can be re-quoted */
+    TOKEN_PREPROC_Q,       /* %? */
+    TOKEN_PREPROC_QQ,      /* %?? */
+    TOKEN_PREPROC_SQ,      /* %*? */
+    TOKEN_PREPROC_SQQ,     /* %*?? */
+    TOKEN_PASTE,           /* %+ */
+    TOKEN_COND_COMMA,      /* %, */
+    TOKEN_INDIRECT,        /* %[...] */
+    TOKEN_XDEF_PARAM,      /* Used during %xdefine processing */
+    /* smacro parameters starting here; an arbitrary number. */
+    TOKEN_SMAC_START_PARAMS,    /* MUST BE LAST IN THE LIST!!! */
+    TOKEN_MAX = INT_MAX		/* Keep compiler from reducing the range */
 };
 
+/* Must match the fp_formats[] array in asm/floats.c */
 enum floatize {
     FLOAT_8,
     FLOAT_16,
+    FLOAT_B16,
     FLOAT_32,
     FLOAT_64,
     FLOAT_80M,
     FLOAT_80E,
     FLOAT_128L,
-    FLOAT_128H
+    FLOAT_128H,
+    FLOAT_ERR                   /* Invalid format, MUST BE LAST */
 };
 
 /* Must match the list in string_transform(), in strfunc.c */
@@ -552,13 +626,14 @@ enum prefixes { /* instruction prefixes */
 };
 
 enum ea_flags { /* special EA flags */
-    EAF_BYTEOFFS    =  1,   /* force offset part to byte size */
-    EAF_WORDOFFS    =  2,   /* force offset part to [d]word size */
-    EAF_TIMESTWO    =  4,   /* really do EAX*2 not EAX+EAX */
-    EAF_REL         =  8,   /* IP-relative addressing */
-    EAF_ABS         = 16,   /* non-IP-relative addressing */
-    EAF_FSGS        = 32,   /* fs/gs segment override present */
-    EAF_MIB         = 64    /* mib operand */
+    EAF_BYTEOFFS    =   1,  /* force offset part to byte size */
+    EAF_WORDOFFS    =   2,  /* force offset part to [d]word size */
+    EAF_TIMESTWO    =   4,  /* really do EAX*2 not EAX+EAX */
+    EAF_REL         =   8,  /* IP-relative addressing */
+    EAF_ABS         =  16,  /* non-IP-relative addressing */
+    EAF_FSGS        =  32,  /* fs/gs segment override present */
+    EAF_MIB         =  64,  /* mib operand */
+    EAF_SIB         = 128   /* SIB encoding obligatory */
 };
 
 enum eval_hint { /* values for `hinttype' */
@@ -1042,11 +1117,33 @@ struct dfmt {
                            int is_global, char *special);
 
     /*
-     * debug_macros - called once at the end with a definition for each
+     * debug_smacros - called when an smacro is defined or undefined
+     * during the code-generation pass. The definition string contains
+     * the macro name, any arguments, a single space, and the macro
+     * definition; this is what is expected by e.g. DWARF.
+     *
+     * The definition is provided even for an undef.
+     */
+    void (*debug_smacros)(bool define, const char *def);
+
+    /*
+     * debug_include - called when a file is included or the include
+     * is finished during the code-generation pass.  The filename is
+     * kept by the srcfile system and so can be compared for pointer
+     * equality.
+     *
+     * A filename of NULL means builtin (initial or %use) or command
+     * line statements.
+     */
+    void (*debug_include)(bool start, struct src_location outer,
+                          struct src_location inner);
+
+    /*
+     * debug_mmacros - called once at the end with a definition for each
      * non-.nolist macro that has been invoked at least once in the program,
      * and the corresponding address ranges. See dbginfo.h.
      */
-    void (*debug_macros)(const struct debug_macro_info *);
+    void (*debug_mmacros)(const struct debug_macro_info *);
 
     /*
      * debug_directive - called whenever a DEBUG directive other than 'LINE'

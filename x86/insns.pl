@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 ## --------------------------------------------------------------------------
 ##
-##   Copyright 1996-2017 The NASM Authors - All Rights Reserved
+##   Copyright 1996-2020 The NASM Authors - All Rights Reserved
 ##   See the file AUTHORS included with the NASM distribution for
 ##   the specific copyright holders.
 ##
@@ -444,7 +444,7 @@ sub format_insn($$$$$) {
     my $nd = 0;
     my ($num, $flagsindex);
     my @bytecode;
-    my ($op, @ops, $opp, @opx, @oppx, @decos, @opevex);
+    my ($op, @ops, @opsize, $opp, @opx, @oppx, @decos, @opevex);
 
     return (undef, undef) if $operands eq "ignore";
 
@@ -452,9 +452,11 @@ sub format_insn($$$$$) {
     $operands =~ s/\*//g;
     $operands =~ s/:/|colon,/g;
     @ops = ();
+    @opsize = ();
     @decos = ();
     if ($operands ne 'void') {
         foreach $op (split(/,/, $operands)) {
+	    my $opsz = 0;
             @opx = ();
             @opevex = ();
             foreach $opp (split(/\|/, $op)) {
@@ -465,6 +467,7 @@ sub format_insn($$$$$) {
 
                 if ($opp =~ s/(?<!\d)(8|16|32|64|80|128|256|512)$//) {
                     push(@oppx, "bits$1");
+		    $opsz = $1 + 0;
                 }
                 $opp =~ s/^mem$/memory/;
                 $opp =~ s/^memory_offs$/mem_offs/;
@@ -481,6 +484,7 @@ sub format_insn($$$$$) {
             }
             $op = join('|', @opx);
             push(@ops, $op);
+	    push(@opsize, $opsz);
             push(@decos, (@opevex ? join('|', @opevex) : '0'));
         }
     }
@@ -488,6 +492,7 @@ sub format_insn($$$$$) {
     $num = scalar(@ops);
     while (scalar(@ops) < $MAX_OPERANDS) {
         push(@ops, '0');
+	push(@opsize, 0);
         push(@decos, '0');
     }
     $operands = join(',', @ops);
@@ -499,22 +504,27 @@ sub format_insn($$$$$) {
     }
     $decorators =~ tr/a-z/A-Z/;
 
+    # Remember if we have an ARx flag
+    my $arx = undef;
+
     # expand and uniqify the flags
     my %flags;
     foreach my $flag (split(',', $flags)) {
+	next if ($flag eq '');
+
 	if ($flag eq 'ND') {
 	    $nd = 1;
-	} elsif ($flag eq 'X64') {
-	    # X64 is shorthand for "LONG,X86_64"
-	    $flags{'LONG'}++;
-	    $flags{'X86_64'}++;
-	} elsif ($flag ne '') {
+	} else {
 	    $flags{$flag}++;
 	}
 
 	if ($flag eq 'NEVER' || $flag eq 'NOP') {
 	    # These flags imply OBSOLETE
 	    $flags{'OBSOLETE'}++;
+	}
+
+	if ($flag =~ /^AR([0-9]+)$/) {
+	    $arx = $1+0;
 	}
     }
 
@@ -524,8 +534,41 @@ sub format_insn($$$$$) {
 	$flags{'VEX'}++;
     }
 
+    # Look for SM flags clearly inconsistent with operand bitsizes
+    if ($flags{'SM'} || $flags{'SM2'}) {
+	my $ssize = 0;
+	my $e = $flags{'SM2'} ? 2 : $MAX_OPERANDS;
+	for (my $i = 0; $i < $e; $i++) {
+	    next if (!$opsize[$i]);
+	    if (!$ssize) {
+		$ssize = $opsize[$i];
+	    } elsif ($opsize[$i] != $ssize) {
+		die "$fname:$line: inconsistent SM flag for argument $i\n";
+	    }
+	}
+    }
+
+    # Look for Sx flags that can never match operand bitsizes. If the
+    # intent is to never match (require explicit sizes), use the SX flag.
+    # This doesn't apply to registers that pre-define specific sizes;
+    # this should really be derived from include/opflags.h...
+    my %sflags = ( 'SB' => 8, 'SW' => 16, 'SD' => 32, 'SQ' => 64,
+		   'SO' => 128, 'SY' => 256, 'SZ' => 512 );
+    my $s = defined($arx) ? $arx : 0;
+    my $e = defined($arx) ? $arx : $MAX_OPERANDS - 1;
+
+    foreach my $sf (keys(%sflags)) {
+	next if (!$flags{$sf});
+	for (my $i = $s; $i <= $e; $i++) {
+	    if ($opsize[$i] && $ops[$i] !~ /\breg_(gpr|[cdts]reg)\b/) {
+		die "$fname:$line: inconsistent $sf flag for argument $i ($ops[$i])\n"
+		    if ($opsize[$i] != $sflags{$sf});
+	    }
+	}
+    }
+
     $flagsindex = insns_flag_index(keys %flags);
-    die "$fname:$line: error in flags $flags" unless (defined($flagsindex));
+    die "$fname:$line: error in flags $flags\n" unless (defined($flagsindex));
 
     @bytecode = (decodify($codes, $relax), 0);
     push(@bytecode_list, [@bytecode]);
@@ -880,11 +923,19 @@ sub byte_code_compile($$) {
             $prefix_ok = 0;
         } elsif ($op =~ m:^/([0-7])$:) {
             if (!defined($oppos{'m'})) {
-                die "$fname:$line: $op requires m operand\n";
+                die "$fname:$line: $op requires an m operand\n";
             }
             push(@codes, 06) if ($oppos{'m'} & 4);
             push(@codes, 0200 + (($oppos{'m'} & 3) << 3) + $1);
             $prefix_ok = 0;
+	} elsif ($op =~ m:^/([0-3]?)r([0-7])$:) {
+	    if (!defined($oppos{'r'})) {
+                die "$fname:$line: $op requires an r operand\n";
+	    }
+	    push(@codes, 05) if ($oppos{'r'} & 4);
+	    push(@codes, 0171);
+	    push(@codes, (($1+0) << 6) + (($oppos{'r'} & 3) << 3) + $2);
+	    $prefix_ok = 0;
         } elsif ($op =~ /^(vex|xop)(|\..*)$/) {
             my $vexname = $1;
             my $c = $vexmap{$vexname};
@@ -907,7 +958,7 @@ sub byte_code_compile($$) {
                         $w = 2;
                     } elsif ($oq eq 'ww') {
                         $w = 3;
-                    } elsif ($oq eq 'p0') {
+                    } elsif ($oq eq 'np' || $oq eq 'p0') {
                         $p = 0;
                     } elsif ($oq eq '66' || $oq eq 'p1') {
                         $p = 1;
@@ -934,9 +985,6 @@ sub byte_code_compile($$) {
                 }
             if (!defined($m) || !defined($w) || !defined($l) || !defined($p)) {
                 die "$fname:$line: missing fields in \U$vexname\E specification\n";
-            }
-            if (defined($oppos{'v'}) && !$has_nds) {
-                die "$fname:$line: 'v' operand without ${vexname}.nds or ${vexname}.ndd\n";
             }
 	    my $minmap = ($c == 1) ? 8 : 0; # 0-31 for VEX, 8-31 for XOP
 	    if ($m < $minmap || $m > 31) {
@@ -966,7 +1014,7 @@ sub byte_code_compile($$) {
                         $w = 2;
                     } elsif ($oq eq 'ww') {
                         $w = 3;
-                    } elsif ($oq eq 'p0') {
+                    } elsif ($oq eq 'np' || $oq eq 'p0') {
                         $p = 0;
                     } elsif ($oq eq '66' || $oq eq 'p1') {
                         $p = 1;
@@ -993,9 +1041,6 @@ sub byte_code_compile($$) {
                 }
             if (!defined($m) || !defined($w) || !defined($l) || !defined($p)) {
                 die "$fname:$line: missing fields in EVEX specification\n";
-            }
-            if (defined($oppos{'v'}) && !$has_nds) {
-                die "$fname:$line: 'v' operand without evex.nds or evex.ndd\n";
             }
 	    if ($m > 15) {
 		die "$fname:$line: Only maps 0-15 are valid for EVEX\n";
